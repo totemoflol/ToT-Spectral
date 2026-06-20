@@ -142,7 +142,7 @@ RightSection:Button({
             return
         end
         
-        local webhookURL = "YOUR_WEBHOOK_URL_HERE" -- <--- PASTE YOUR WEBHOOK HERE
+        local webhookURL = "https://discord.com/api/webhooks/1517845813152186370/1-h_g2Qw5NB2tSnKmgBnK8CVxbRuRALldBXnGw2vc5B2v3sL-pg06EHypyKx4uIxaS0i" -- <--- PASTE YOUR WEBHOOK HERE
         
         local messageContent = "=== Ghost Data Analysis ===\n"
         for ghostName, patternStr in pairs(results) do
