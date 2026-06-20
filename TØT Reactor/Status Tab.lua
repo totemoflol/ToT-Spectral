@@ -44,31 +44,33 @@ end
 local RoomGhostMap = {
     ["pantry"] = { "Leviathan", "Revenant", "Umbra" },
     ["kitchen"] = { "Siren", "Aswang", "Dybbuk", "The Wisp" },
-    ["laundry"] = { "Entity", "Nightmare", "Ghoul" },
+    ["laundry room"] = { "Entity", "Nightmare", "Ghoul" },
     ["bathroom"] = { "Shadow", "Phantom", "Oni", "Skinwalker" },
     ["office"] = { "Spirit", "Specter", "Banshee" },
     ["bedroom"] = { "Wendigo", "Demon", "Wraith" }
 }
 
--- Function to handle greying out ghosts based on room
-local function FilterGhostsByRoom(roomName)
+-- Function to handle greying out ghosts based on room AND gender
+local function FilterGhostsByRoom(roomName, currentGender)
     local normalizedRoom = string.lower(tostring(roomName))
     local validGhosts = RoomGhostMap[normalizedRoom]
     
     if validGhosts then
-        -- Create a quick lookup table
         local isValid = {}
         for _, ghost in ipairs(validGhosts) do
             isValid[ghost] = true
         end
         
-        -- Highlight valid ghosts, grey out the rest
         for _, ghostName in ipairs(demonologyGhosts) do
-            if isValid[ghostName] then
-                getgenv().SetGhostGreyedOut(ghostName, false) -- White
-            else
-                getgenv().SetGhostGreyedOut(ghostName, true) -- Greyed out
+            -- Check if ghost is valid for the room
+            local shouldBeWhite = isValid[ghostName] or false
+            
+            -- Override to grey if gender is Male and ghost is Siren or Keres
+            if currentGender == "Male" and (ghostName == "Siren" or ghostName == "Keres") then
+                shouldBeWhite = false
             end
+            
+            getgenv().SetGhostGreyedOut(ghostName, not shouldBeWhite)
         end
     else
         -- If room isn't in the list, make them all white again
@@ -82,6 +84,8 @@ end
 getgenv().UpdateGhostStatus = function(ghostModel)
     if not ghostModel then return end
     
+    local currentGender = tostring(ghostModel:GetAttribute("Gender") or "Unknown")
+    
     if not hasRoomBeenSet then
         local favRoom = tostring(ghostModel:GetAttribute("FavoriteRoom") or "Unknown")
         if favRoom ~= "Unknown" then
@@ -89,12 +93,11 @@ getgenv().UpdateGhostStatus = function(ghostModel)
             hasRoomBeenSet = true
             
             -- Run the filter as soon as we get the room!
-            FilterGhostsByRoom(favRoom)
+            FilterGhostsByRoom(favRoom, currentGender)
         end
     end
     
-    local gender = tostring(ghostModel:GetAttribute("Gender") or "Unknown")
-    GenderLabel:SetText("Gender: " .. gender)
+    GenderLabel:SetText("Gender: " .. currentGender)
 end
 
 -- Auto-search loop to find the ghost and hook its attributes
