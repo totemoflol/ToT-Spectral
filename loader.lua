@@ -6,3 +6,5 @@ getgenv().Window = Library:Window({
     Name = "TØT Spectrum", -- If the library supports a text title
     Logo = "rbxassetid://77749228793011" -- Custom logo image ID
 })
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/totemoflol/ToT-Spectral/refs/heads/main/TØT%20Reactor/Status%20Tab.lua"))()
