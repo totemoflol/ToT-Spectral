@@ -1,45 +1,7 @@
 local Window = getgenv().Window
+local HttpService = game:GetService("HttpService")
 
--- Create the Status Page
-local StatusTab = Window:Page({ Icon = "rbxassetid://129245697782918" })
-
--- Left Side: Ghost Info
-local StatusSection = StatusTab:Section({ Name = "Ghost Info", Side = 1 })
-
-local RoomLabel = StatusSection:Label({ Name = "Favorite Room: Unknown" })
-local GenderLabel = StatusSection:Label({ Name = "Gender: Unknown" })
-
-local hasRoomBeenSet = false
-local hookedGhost = nil
-
--- Right Side: Ghost List
-local GhostsSection = StatusTab:Section({ Name = "Demonology Ghosts", Side = 2 })
-
--- ==========================================
--- SCROLL FIX
--- ==========================================
-local function forceScrolling(sectionObj)
-    -- Attempt to find the internal container frame of the section
-    local container = sectionObj.Container or sectionObj.Frame or sectionObj.Instance or sectionObj.Content
-    
-    if container and container:IsA("ScrollingFrame") then
-        -- Automatically expands the canvas height when labels are added
-        container.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        -- Makes the scrollbar visible and styled
-        container.ScrollBarThickness = 5
-        container.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-        container.ScrollBarImageTransparency = 0
-        
-        -- OPTIONAL: If it still stretches the page, uncomment the line below 
-        -- and change '300' to your desired max height for the list.
-        -- container.Size = UDim2.new(1, -20, 0, 300)
-    else
-        warn("[Scroll Fix Failed] The UI library didn't use a ScrollingFrame for this section.")
-    end
-end
-forceScrolling(GhostsSection)
--- ==========================================
-
+-- Define the ghost list again for this file
 local demonologyGhosts = {
     "Aswang", "Banshee", "Demon", "Dullahan", "Dybbuk", "Entity", "Ghoul", 
     "Keres", "Leviathan", "Nightmare", "Oni", "Phantom", "Revenant", 
@@ -47,117 +9,199 @@ local demonologyGhosts = {
     "Umbra", "Vex", "Wendigo", "Wraith", "Ravager", "Vesper"
 }
 
-local GhostLabels = {}
+-- Create the Data Logger Page
+local DataTab = Window:Page({ Icon = "rbxassetid://129245697782918" })
 
-for _, ghostName in ipairs(demonologyGhosts) do
-    GhostLabels[ghostName] = GhostsSection:Label({ Name = ghostName })
-end
+-- Left Side: Logging
+local LeftSection = DataTab:Section({ Name = "Log Data", Side = 1 })
 
--- Made Global so other files can grey out ghosts!
-getgenv().SetGhostGreyedOut = function(ghostName, isGreyed)
-    local labelObj = GhostLabels[ghostName]
-    if labelObj and labelObj.Items["Text"] then
-        if isGreyed then
-            labelObj.Items["Text"].Instance.TextColor3 = Color3.fromRGB(80, 80, 80)
-        else
-            labelObj.Items["Text"].Instance.TextColor3 = Color3.fromRGB(255, 255, 255)
-        end
+local selectedGhost = "Aswang"
+local numInputs = {"", "", "", ""}
+
+-- Dropdown for Ghosts (ASSIGNED TO VARIABLE)
+local GhostDropdown = LeftSection:Dropdown({
+    Name = "Select Ghost",
+    Items = demonologyGhosts,
+    Default = "Aswang",
+    Flag = "DataGhostSelect",
+    Callback = function(val)
+        selectedGhost = val
     end
-end
+})
 
--- Room to Ghost mapping (all lowercase to prevent case issues)
-local RoomGhostMap = {
-    ["pantry"] = { "Leviathan", "Revenant", "Umbra" },
-    ["kitchen"] = { "Siren", "Aswang", "Dybbuk", "The Wisp" },
-    ["laundry room"] = { "Entity", "Nightmare", "Ghoul" },
-    ["bathroom"] = { "Shadow", "Phantom", "Oni", "Skinwalker" },
-    ["office"] = { "Spirit", "Specter", "Banshee" },
-    ["bedroom"] = { "Wendigo", "Demon", "Wraith" }
-}
+-- ==========================================
+-- DROPDOWN SCROLL FIX
+-- ==========================================
+local function fixDropdownScroll(dropdownObj)
+    -- Attempt to find the internal container that holds the options
+    local container = dropdownObj.Container 
+        or dropdownObj.Frame 
+        or dropdownObj.List 
+        or dropdownObj.Content 
+        or dropdownObj.OptionsContainer
 
--- Function to handle greying out ghosts based on room AND gender
-local function FilterGhostsByRoom(roomName, currentGender)
-    local normalizedRoom = string.lower(tostring(roomName))
-    local validGhosts = RoomGhostMap[normalizedRoom]
-    
-    if validGhosts then
-        local isValid = {}
-        for _, ghost in ipairs(validGhosts) do
-            isValid[ghost] = true
-        end
+    -- Fallback: Try to find it by looking for a Frame/ScrollingFrame inside the main instance
+    if not container and dropdownObj.Instance then
+        container = dropdownObj.Instance:FindFirstChildWhichIsA("ScrollingFrame") 
+            or dropdownObj.Instance:FindFirstChildWhichIsA("Frame")
+    end
+
+    if container and (container:IsA("ScrollingFrame") or container:IsA("Frame")) then
+        -- 1. FORCE IT SHORTER (Change 150 to whatever height you want in pixels)
+        container.Size = UDim2.new(1, 0, 0, 150) 
         
-        for _, ghostName in ipairs(demonologyGhosts) do
-            -- Check if ghost is valid for the room
-            local shouldBeWhite = isValid[ghostName] or false
-            
-            -- Override to grey if gender is Male and ghost is Siren or Keres
-            if currentGender == "Male" and (ghostName == "Siren" or ghostName == "Keres") then
-                shouldBeWhite = false
-            end
-            
-            getgenv().SetGhostGreyedOut(ghostName, not shouldBeWhite)
+        -- 2. MAKE IT SCROLLABLE (Only works if the library used a ScrollingFrame)
+        if container:IsA("ScrollingFrame") then
+            container.CanvasSize = UDim2.new(0, 0, 0, 0)
+            container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+            container.ScrollBarThickness = 5
+            container.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+        else
+            warn("[Dropdown Fix] The dropdown uses a standard Frame, not a ScrollingFrame. You must edit the UI library file to fix this.")
         end
     else
-        -- If room isn't in the list, make them all white again
-        for _, ghostName in ipairs(demonologyGhosts) do
-            getgenv().SetGhostGreyedOut(ghostName, false)
-        end
+        warn("[Dropdown Fix] Could not find the dropdown container automatically.")
     end
 end
 
--- Function to update Ghost Info (Made Global)
-getgenv().UpdateGhostStatus = function(ghostModel)
-    if not ghostModel then return end
-    
-    local currentGender = tostring(ghostModel:GetAttribute("Gender") or "Unknown")
-    
-    if not hasRoomBeenSet then
-        local favRoom = tostring(ghostModel:GetAttribute("FavoriteRoom") or "Unknown")
-        if favRoom ~= "Unknown" then
-            RoomLabel:SetText("Favorite Room: " .. favRoom)
-            hasRoomBeenSet = true
-            
-            -- Run the filter as soon as we get the room!
-            FilterGhostsByRoom(favRoom, currentGender)
+-- Wait 1 frame to ensure the UI is fully drawn before modifying it
+task.defer(fixDropdownScroll, GhostDropdown)
+-- ==========================================
+
+-- 4 Number Textboxes
+for i = 1, 4 do
+    LeftSection:Textbox({
+        Name = "Number " .. i,
+        Placeholder = "Enter number...",
+        Numeric = true, -- Forces only numbers to be typed
+        Flag = "DataNum" .. i,
+        Callback = function(val)
+            numInputs[i] = val
         end
-    end
-    
-    GenderLabel:SetText("Gender: " .. currentGender)
+    })
 end
 
--- Auto-search loop to find the ghost and hook its attributes
-task.spawn(function()
-    while task.wait(1) do
-        if hookedGhost and hookedGhost.Parent then 
-            continue 
-        end
-        
-        -- Reset for a new round
-        hookedGhost = nil
-        hasRoomBeenSet = false
-        RoomLabel:SetText("Favorite Room: Unknown")
-        GenderLabel:SetText("Gender: Unknown")
-        
-        -- Reset all ghosts to white when a new round starts
-        for _, ghostName in ipairs(demonologyGhosts) do
-            getgenv().SetGhostGreyedOut(ghostName, false)
-        end
-        
-        -- Search the workspace for the ghost model
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") and (obj:GetAttribute("FavoriteRoom") ~= nil or obj:GetAttribute("Gender") ~= nil) then
-                hookedGhost = obj
-                getgenv().UpdateGhostStatus(hookedGhost)
-                
-                obj:GetAttributeChangedSignal("Gender"):Connect(function()
-                    getgenv().UpdateGhostStatus(hookedGhost)
-                end)
-                
-                obj:GetAttributeChangedSignal("FavoriteRoom"):Connect(function()
-                    getgenv().UpdateGhostStatus(hookedGhost)
-                end)
-                break
+-- Save to Device Button
+LeftSection:Button({
+    Name = "Save to Device",
+    Callback = function()
+        -- Read existing data
+        local fileData = {}
+        if isfile("GhostData.json") then
+            local success, decoded = pcall(function()
+                return HttpService:JSONDecode(readfile("GhostData.json"))
+            end)
+            if success and type(decoded) == "table" then
+                fileData = decoded
             end
         end
+        
+        -- Ensure ghost has a table
+        if not fileData[selectedGhost] then
+            fileData[selectedGhost] = {}
+        end
+        
+        -- Insert new pattern
+        table.insert(fileData[selectedGhost], {
+            numInputs[1] or "0",
+            numInputs[2] or "0",
+            numInputs[3] or "0",
+            numInputs[4] or "0"
+        })
+        
+        -- Save back to file
+        writefile("GhostData.json", HttpService:JSONEncode(fileData))
+        getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
     end
-end)
+})
+
+
+-- Right Side: Analyzing & Webhook
+local RightSection = DataTab:Section({ Name = "Analyze Data", Side = 2 })
+
+local ResultsLabel = RightSection:Label({ Name = "No data analyzed yet." })
+
+-- Function to analyze the file and get the most common pattern
+local function GetAnalyzedData()
+    if not isfile("GhostData.json") then
+        return nil, "No data file found."
+    end
+    
+    local fileData = HttpService:JSONDecode(readfile("GhostData.json"))
+    local results = {}
+    
+    for ghostName, patterns in pairs(fileData) do
+        local counts = {}
+        local maxCount = 0
+        local bestPattern = "None"
+        
+        for _, pat in ipairs(patterns) do
+            local patStr = table.concat(pat, "-")
+            counts[patStr] = (counts[patStr] or 0) + 1
+            
+            if counts[patStr] > maxCount then
+                maxCount = counts[patStr]
+                bestPattern = patStr
+            end
+        end
+        
+        results[ghostName] = bestPattern .. " (Found " .. maxCount .. " times)"
+    end
+    
+    return results
+end
+
+-- Analyze Button
+RightSection:Button({
+    Name = "Analyze & Display Data",
+    Callback = function()
+        local results, err = GetAnalyzedData()
+        if err then
+            ResultsLabel:SetText(err)
+            return
+        end
+        
+        local displayText = "=== Most Common Patterns ==="
+        for ghostName, patternStr in pairs(results) do
+            displayText = displayText .. "\n" .. ghostName .. ": " .. patternStr
+        end
+        
+        ResultsLabel:SetText(displayText)
+        getgenv().Library:Notification("Data analyzed!", 3, Color3.fromRGB(78, 95, 255))
+    end
+})
+
+-- Send to Webhook Button
+RightSection:Button({
+    Name = "Send to Discord Webhook",
+    Callback = function()
+        local results, err = GetAnalyzedData()
+        if err then
+            getgenv().Library:Notification(err, 3, Color3.fromRGB(255, 0, 0))
+            return
+        end
+        
+        local webhookURL = "YOUR_WEBHOOK_URL_HERE" -- <--- PASTE YOUR WEBHOOK HERE
+        
+        local messageContent = "=== Ghost Data Analysis ===\n"
+        for ghostName, patternStr in pairs(results) do
+            messageContent = messageContent .. "**" .. ghostName .. "**: " .. patternStr .. "\n"
+        end
+        
+        local payload = HttpService:JSONEncode({
+            ["content"] = messageContent
+        })
+        
+        -- Send the request
+        pcall(function()
+            (syn and syn.request or http_request or http.request or fluxus.request)({
+                Url = webhookURL,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = payload
+            })
+        end)
+        
+        getgenv().Library:Notification("Sent to Discord!", 3, Color3.fromRGB(0, 255, 0))
+    end
+})
