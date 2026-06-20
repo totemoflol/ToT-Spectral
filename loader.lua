@@ -8,3 +8,5 @@ getgenv().Window = Library:Window({
 })
 
 loadstring(game:HttpGet("https://raw.githubusercontent.com/totemoflol/ToT-Spectral/refs/heads/main/TØT%20Reactor/Status%20Tab.lua"))()
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/totemoflol/ToT-Spectral/refs/heads/main/TØT%20Reactor/Log%20Tab.lua"))()
