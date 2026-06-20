@@ -38,3 +38,5 @@ local Window = Rayfield:CreateWindow({
       Key = {"Hello"} -- List of keys that the system will accept, can be RAW file links (pastebin, github, etc.) or simple strings ("hello", "key22")
    }
 })
+
+loadstring(game:HttpGet('https://raw.githubusercontent.com/totemoflol/ToT-Spectral/refs/heads/main/TØT%20Reactor/Status%20Tab.lua'))()
