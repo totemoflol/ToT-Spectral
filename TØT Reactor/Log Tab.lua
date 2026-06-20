@@ -15,11 +15,28 @@ local DataTab = Window:Page({ Icon = "rbxassetid://129245697782918" })
 -- Left Side: Logging
 local LeftSection = DataTab:Section({ Name = "Log Data", Side = 1 })
 
+-- ==========================================
+-- FIX 1: MAKE LEFT SECTION SCROLLABLE FOR MOBILE
+-- ==========================================
+task.defer(function()
+    -- Try to find the section's internal container
+    local container = LeftSection.Container or LeftSection.Frame or LeftSection.Instance or LeftSection.Content
+    if container and container:IsA("ScrollingFrame") then
+        -- Forces the section to stop at a max height (Change 350 to make it taller/shorter)
+        container.Size = UDim2.new(1, -20, 0, 350)
+        -- Allows it to scroll when the dropdown opens
+        container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        container.ScrollBarThickness = 5
+        container.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+    end
+end)
+-- ==========================================
+
 local selectedGhost = "Aswang"
 local numInputs = {"", "", "", ""}
 
 -- Dropdown for Ghosts
-local GhostDropdown = LeftSection:Dropdown({
+LeftSection:Dropdown({
     Name = "Select Ghost",
     Items = demonologyGhosts,
     Default = "Aswang",
@@ -28,37 +45,6 @@ local GhostDropdown = LeftSection:Dropdown({
         selectedGhost = val
     end
 })
-
--- ==========================================
--- DROPDOWN SCROLL FIX
--- ==========================================
-local function fixDropdownScroll(dropdownObj)
-    local container = dropdownObj.Container 
-        or dropdownObj.Frame 
-        or dropdownObj.List 
-        or dropdownObj.Content 
-        or dropdownObj.OptionsContainer
-
-    if not container and dropdownObj.Instance then
-        container = dropdownObj.Instance:FindFirstChildWhichIsA("ScrollingFrame") 
-            or dropdownObj.Instance:FindFirstChildWhichIsA("Frame")
-    end
-
-    if container and (container:IsA("ScrollingFrame") or container:IsA("Frame")) then
-        container.Size = UDim2.new(1, 0, 0, 150) 
-        
-        if container:IsA("ScrollingFrame") then
-            container.CanvasSize = UDim2.new(0, 0, 0, 0)
-            container.AutomaticCanvasSize = Enum.AutomaticSize.Y
-            container.ScrollBarThickness = 5
-            container.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-        else
-            warn("[Dropdown Fix] The dropdown uses a standard Frame, not a ScrollingFrame.")
-        end
-    end
-end
-task.defer(fixDropdownScroll, GhostDropdown)
--- ==========================================
 
 -- 4 Number Textboxes
 for i = 1, 4 do
@@ -107,50 +93,7 @@ LeftSection:Button({
 -- Right Side: Analyzing & Webhook
 local RightSection = DataTab:Section({ Name = "Analyze Data", Side = 2 })
 
-local ResultsLabel = RightSection:Label({ Name = "No data analyzed yet." })
-
--- Function to analyze the file
-local function GetAnalyzedData()
-    if not isfile("GhostData.json") then
-        return nil, "No data file found."
-    end
-    
-    local success, fileData = pcall(function()
-        return HttpService:JSONDecode(readfile("GhostData.json"))
-    end)
-    
-    if not success or type(fileData) ~= "table" then
-        return nil, "Failed to read data file."
-    end
-
-    local results = {}
-    
-    for ghostName, patterns in pairs(fileData) do
-        local counts = {}
-        local ghostPatternsList = {}
-        
-        -- Count how many times each exact pattern appears
-        for _, pat in ipairs(patterns) do
-            -- Join A, B, C, D with " | "
-            local patStr = table.concat(pat, " | ")
-            counts[patStr] = (counts[patStr] or 0) + 1
-        end
-        
-        -- Format them as "1 | 2 | 3 | 4 (Count)"
-        for patternStr, count in pairs(counts) do
-            table.insert(ghostPatternsList, patternStr .. " (" .. count .. ")")
-        end
-        
-        -- If the ghost has multiple different patterns logged, list them all
-        if #ghostPatternsList > 0 then
-            results[ghostName] = table.concat(ghostPatternsList, "\n")
-        else
-            results[ghostName] = "No valid patterns"
-        end
-    end
-    
-    return results
-end
+-- NOTE: The Results Label is intentionally created LAST so it appears below the buttons
 
 -- Analyze Button
 RightSection:Button({
@@ -186,7 +129,6 @@ RightSection:Button({
         
         local messageContent = "=== Ghost Data Analysis ===\n"
         for ghostName, patternStr in pairs(results) do
-            -- Discord formatting
             messageContent = messageContent .. "**" .. ghostName .. "**:\n" .. patternStr .. "\n\n"
         end
         
@@ -206,3 +148,49 @@ RightSection:Button({
         getgenv().Library:Notification("Sent to Discord!", 3, Color3.fromRGB(0, 255, 0))
     end
 })
+
+-- ==========================================
+-- FIX 2: CREATE RESULTS LABEL AT THE BOTTOM
+-- ==========================================
+local ResultsLabel = RightSection:Label({ Name = "No data analyzed yet." })
+-- ==========================================
+
+
+-- Function to analyze the file
+local function GetAnalyzedData()
+    if not isfile("GhostData.json") then
+        return nil, "No data file found."
+    end
+    
+    local success, fileData = pcall(function()
+        return HttpService:JSONDecode(readfile("GhostData.json"))
+    end)
+    
+    if not success or type(fileData) ~= "table" then
+        return nil, "Failed to read data file."
+    end
+
+    local results = {}
+    
+    for ghostName, patterns in pairs(fileData) do
+        local counts = {}
+        local ghostPatternsList = {}
+        
+        for _, pat in ipairs(patterns) do
+            local patStr = table.concat(pat, " | ")
+            counts[patStr] = (counts[patStr] or 0) + 1
+        end
+        
+        for patternStr, count in pairs(counts) do
+            table.insert(ghostPatternsList, patternStr .. " (" .. count .. ")")
+        end
+        
+        if #ghostPatternsList > 0 then
+            results[ghostName] = table.concat(ghostPatternsList, "\n")
+        else
+            results[ghostName] = "No valid patterns"
+        end
+    end
+    
+    return results
+end
