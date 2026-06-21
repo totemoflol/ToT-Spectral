@@ -1,5 +1,6 @@
 local Window = getgenv().Window
 local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
 
 -- Define the ghost list again for this file
 local demonologyGhosts = {
@@ -12,31 +13,55 @@ local demonologyGhosts = {
 -- Create the Data Logger Page
 local DataTab = Window:Page({ Icon = "rbxassetid://129245697782918" })
 
+-- ==========================================
+-- MOVED UP: Function to analyze the file
+-- ==========================================
+local function GetAnalyzedData()
+    if not isfile("GhostData.json") then
+        return nil, "No data file found."
+    end
+    
+    local success, fileData = pcall(function()
+        return HttpService:JSONDecode(readfile("GhostData.json"))
+    end)
+    
+    if not success or type(fileData) ~= "table" then
+        return nil, "Failed to read data file."
+    end
+
+    local results = {}
+    
+    for ghostName, patterns in pairs(fileData) do
+        local counts = {}
+        local ghostPatternsList = {}
+        
+        for _, pat in ipairs(patterns) do
+            local patStr = table.concat(pat, " | ")
+            counts[patStr] = (counts[patStr] or 0) + 1
+        end
+        
+        for patternStr, count in pairs(counts) do
+            table.insert(ghostPatternsList, patternStr .. " (" .. count .. ")")
+        end
+        
+        if #ghostPatternsList > 0 then
+            results[ghostName] = table.concat(ghostPatternsList, "\n")
+        else
+            results[ghostName] = "No valid patterns"
+        end
+    end
+    
+    return results
+end
+
 -- Left Side: Logging
 local LeftSection = DataTab:Section({ Name = "Log Data", Side = 1 })
-
--- ==========================================
--- FIX 1: MAKE LEFT SECTION SCROLLABLE FOR MOBILE
--- ==========================================
-task.defer(function()
-    -- Try to find the section's internal container
-    local container = LeftSection.Container or LeftSection.Frame or LeftSection.Instance or LeftSection.Content
-    if container and container:IsA("ScrollingFrame") then
-        -- Forces the section to stop at a max height (Change 350 to make it taller/shorter)
-        container.Size = UDim2.new(1, -20, 0, 350)
-        -- Allows it to scroll when the dropdown opens
-        container.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        container.ScrollBarThickness = 5
-        container.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-    end
-end)
--- ==========================================
 
 local selectedGhost = "Aswang"
 local numInputs = {"", "", "", ""}
 
 -- Dropdown for Ghosts
-LeftSection:Dropdown({
+local GhostDropdown = LeftSection:Dropdown({
     Name = "Select Ghost",
     Items = demonologyGhosts,
     Default = "Aswang",
@@ -45,6 +70,45 @@ LeftSection:Dropdown({
         selectedGhost = val
     end
 })
+
+-- ==========================================
+-- FIX: MAKE DROPDOWN SHORTER (150px) AND SCROLLABLE
+-- ==========================================
+GhostDropdown.MaxSize = 150 -- Prevents the UI library from erroring on nil size
+local optionHolder = GhostDropdown.Items["OptionHolder"].Instance
+
+-- Disable AutomaticSize so our fixed height applies
+optionHolder.AutomaticSize = Enum.AutomaticSize.None
+optionHolder.Size = UDim2.new(0, 120, 0, 150)
+optionHolder.ClipsDescendants = true
+
+-- Add custom scrolling logic for the UIListLayout
+local layout = optionHolder:FindFirstChildWhichIsA("UIListLayout")
+if layout then
+    local isHovering = false
+    optionHolder.MouseEnter:Connect(function() isHovering = true end)
+    optionHolder.MouseLeave:Connect(function() isHovering = false end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if isHovering and input.UserInputType == Enum.UserInputType.MouseWheel then
+            -- Calculate how far down we can scroll
+            local maxY = (#demonologyGhosts * 28) - 150
+            if maxY < 0 then maxY = 0 end
+            
+            local currentY = layout.Position.Y.Offset
+            local newY = math.clamp(currentY + (input.Position.Z * 30), -maxY, 0)
+            layout.Position = UDim2.new(0, 0, 0, newY)
+        end
+    end)
+    
+    -- Reset scroll position when dropdown closes
+    optionHolder.AncestryChanged:Connect(function()
+        if optionHolder.Parent == getgenv().Library.UnusedHolder.Instance then
+            layout.Position = UDim2.new(0, 0, 0, 0)
+        end
+    end)
+end
+-- ==========================================
 
 -- 4 Number Textboxes
 for i = 1, 4 do
@@ -77,7 +141,6 @@ LeftSection:Button({
             fileData[selectedGhost] = {}
         end
         
-        -- Save exactly in the order A, B, C, D
         table.insert(fileData[selectedGhost], {
             numInputs[1] ~= "" and numInputs[1] or "0",
             numInputs[2] ~= "" and numInputs[2] or "0",
@@ -90,10 +153,12 @@ LeftSection:Button({
     end
 })
 
+
 -- Right Side: Analyzing & Webhook
 local RightSection = DataTab:Section({ Name = "Analyze Data", Side = 2 })
 
--- NOTE: The Results Label is intentionally created LAST so it appears below the buttons
+-- Forward declare the label so the buttons can edit it, even though it's created at the bottom
+local ResultsLabel
 
 -- Analyze Button
 RightSection:Button({
@@ -149,48 +214,5 @@ RightSection:Button({
     end
 })
 
--- ==========================================
--- FIX 2: CREATE RESULTS LABEL AT THE BOTTOM
--- ==========================================
-local ResultsLabel = RightSection:Label({ Name = "No data analyzed yet." })
--- ==========================================
-
-
--- Function to analyze the file
-local function GetAnalyzedData()
-    if not isfile("GhostData.json") then
-        return nil, "No data file found."
-    end
-    
-    local success, fileData = pcall(function()
-        return HttpService:JSONDecode(readfile("GhostData.json"))
-    end)
-    
-    if not success or type(fileData) ~= "table" then
-        return nil, "Failed to read data file."
-    end
-
-    local results = {}
-    
-    for ghostName, patterns in pairs(fileData) do
-        local counts = {}
-        local ghostPatternsList = {}
-        
-        for _, pat in ipairs(patterns) do
-            local patStr = table.concat(pat, " | ")
-            counts[patStr] = (counts[patStr] or 0) + 1
-        end
-        
-        for patternStr, count in pairs(counts) do
-            table.insert(ghostPatternsList, patternStr .. " (" .. count .. ")")
-        end
-        
-        if #ghostPatternsList > 0 then
-            results[ghostName] = table.concat(ghostPatternsList, "\n")
-        else
-            results[ghostName] = "No valid patterns"
-        end
-    end
-    
-    return results
-end
+-- Create the Results Label LAST so it visually appears below the buttons
+ResultsLabel = RightSection:Label({ Name = "No data analyzed yet." })
