@@ -7,6 +7,11 @@ if not Window then
     return
 end
 
+-- Create the Spectral folder in the executor workspace
+if not isfolder("Spectral") then
+    makefolder("Spectral")
+end
+
 local demonologyGhosts = {
     "Aswang", "Banshee", "Demon", "Dullahan", "Dybbuk", "Entity", "Ghoul", 
     "Keres", "Leviathan", "Nightmare", "Oni", "Phantom", "Revenant", 
@@ -15,7 +20,78 @@ local demonologyGhosts = {
 }
 
 -- ==========================================
--- FUNCTIONS DEFINED AT THE TOP
+-- AUTO-CORRECT LOGIC (Triggers on Enter/FocusLost)
+-- ==========================================
+local function levenshtein(str1, str2)
+    local len1, len2 = #str1, #str2
+    local char1, char2, dist, row, diag, ch1, ch2
+    
+    if len1 == 0 then return len2 end
+    if len2 == 0 then return len1 end
+    
+    local matrix = {}
+    for i = 0, len1 do matrix[i] = {} end
+    for i = 0, len1 do matrix[i][0] = i end
+    for j = 0, len2 do matrix[0][j] = j end
+    
+    for i = 1, len1 do
+        char1 = string.sub(str1, i, i)
+        for j = 1, len2 do
+            char2 = string.sub(str2, j, j)
+            dist = char1 == char2 and 0 or 1
+            matrix[i][j] = math.min(matrix[i-1][j] + 1, matrix[i][j-1] + 1, matrix[i-1][j-1] + dist)
+        end
+    end
+    return matrix[len1][len2]
+end
+
+local function getValidGhostName(input)
+    if not input or input == "" then return nil end
+    local lowerInput = string.lower(input)
+    
+    -- 1. Check for exact match
+    for _, ghost in ipairs(demonologyGhosts) do
+        if lowerInput == string.lower(ghost) then
+            return ghost
+        end
+    end
+    
+    -- 2. Check for prefix match (e.g., "Asw" -> "Aswang")
+    if #lowerInput >= 3 then
+        local matchCount = 0
+        local bestMatch = nil
+        for _, ghost in ipairs(demonologyGhosts) do
+            if string.sub(string.lower(ghost), 1, #lowerInput) == lowerInput then
+                matchCount = matchCount + 1
+                bestMatch = ghost
+            end
+        end
+        if matchCount == 1 then
+            return bestMatch
+        end
+    end
+    
+    -- 3. Fallback to Levenshtein for typos (e.g., "Banshe" -> "Banshee")
+    local bestMatch = nil
+    local bestDist = math.huge
+    for _, ghost in ipairs(demonologyGhosts) do
+        local dist = levenshtein(lowerInput, string.lower(ghost))
+        if dist < bestDist then
+            bestDist = dist
+            bestMatch = ghost
+        end
+    end
+    
+    if bestDist <= 2 then -- Allow up to 2 typos
+        return bestMatch
+    end
+    
+    return nil
+end
+-- ==========================================
+
+-- ==========================================
+-- FILE AND DATA FUNCTIONS
 -- ==========================================
 local function GetCurrentGhostRoom()
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -27,12 +103,12 @@ local function GetCurrentGhostRoom()
 end
 
 local function GetAnalyzedData()
-    if not isfile("GhostData.json") then
+    if not isfile("Spectral/GhostData.json") then
         return nil, "No data file found."
     end
     
     local success, fileData = pcall(function()
-        return HttpService:JSONDecode(readfile("GhostData.json"))
+        return HttpService:JSONDecode(readfile("Spectral/GhostData.json"))
     end)
     
     if not success or type(fileData) ~= "table" then
@@ -76,67 +152,41 @@ local LeftSection = DataTab:Section({ Name = "Log Data", Side = 1 })
 
 local selectedGhost = "Aswang"
 local numInputs = {"", "", "", ""}
-local pendingData = nil 
 
-local StatusLabel = LeftSection:Label({ Name = "Status: No pending data" })
+-- Check if pending data exists from a previous server
+local function CheckPendingStatus()
+    if isfile("Spectral/PendingData.json") then
+        local success, data = pcall(function()
+            return HttpService:JSONDecode(readfile("Spectral/PendingData.json"))
+        end)
+        if success and data then
+            local numStr = table.concat(data.Numbers, "-")
+            return "Status: Pending [" .. (data.Room or "Unknown") .. "] " .. numStr
+        end
+    end
+    return "Status: No pending data"
+end
 
--- ==========================================
--- TEXTBOX WITH REAL-TIME AUTO-COMPLETE
--- ==========================================
+local StatusLabel = LeftSection:Label({ Name = CheckPendingStatus() })
+
+-- Textbox for Ghosts (Corrects on Enter / FocusLost)
 local GhostTextbox = LeftSection:Textbox({
     Name = "Select Ghost",
-    Placeholder = "Type ghost name...",
+    Placeholder = "Type name & press Enter",
     Default = "Aswang",
     Flag = "DataGhostSelect",
+    Finished = true, -- Fires when you press Enter or click away
     Callback = function(val)
-        selectedGhost = val
+        local corrected = getValidGhostName(val)
+        if corrected then
+            selectedGhost = corrected
+            getgenv().Library:Notification("Ghost set to: " .. corrected, 2, Color3.fromRGB(255, 255, 0))
+        else
+            getgenv().Library:Notification("Unknown ghost! Defaulting to Aswang.", 3, Color3.fromRGB(255, 0, 0))
+            selectedGhost = "Aswang"
+        end
     end
 })
-
--- Access the internal TextBox to hook typing events
-local inputInstance = GhostTextbox.Items["Input"].Instance
-local isUpdating = false
-local oldLen = 0
-
-inputInstance:GetPropertyChangedSignal("Text"):Connect(function()
-    if isUpdating then return end
-    
-    local text = inputInstance.Text
-    local newLen = #text
-    
-    -- Only auto-complete if the user is typing forward
-    if newLen > oldLen and newLen > 0 then
-        local lowerText = string.lower(text)
-        local match = nil
-        local matchCount = 0
-        
-        -- Find ghosts that start with what they typed
-        for _, ghost in ipairs(demonologyGhosts) do
-            if string.sub(string.lower(ghost), 1, #lowerText) == lowerText then
-                match = ghost
-                matchCount = matchCount + 1
-            end
-        end
-        
-        -- If exactly one ghost matches, auto-complete it
-        if matchCount == 1 and lowerText ~= string.lower(match) then
-            isUpdating = true
-            
-            inputInstance.Text = match
-            
-            -- Highlight the auto-completed part so they can type over it if it's wrong
-            inputInstance.CursorPosition = newLen + 1
-            inputInstance.SelectionStart = #match + 1
-            
-            isUpdating = false
-            oldLen = #match
-            return
-        end
-    end
-    
-    oldLen = newLen
-end)
--- ==========================================
 
 -- 4 Number Textboxes
 for i = 1, 4 do
@@ -151,13 +201,13 @@ for i = 1, 4 do
     })
 end
 
--- Button 1: Save numbers AND room to memory during the round
+-- Button 1: Save numbers AND room to FILE (Survives server changes)
 LeftSection:Button({
     Name = "Save Pending Numbers",
     Callback = function()
         local currentRoom = GetCurrentGhostRoom()
         
-        pendingData = {
+        local pendingData = {
             Room = currentRoom,
             Numbers = {
                 numInputs[1] ~= "" and numInputs[1] or "0",
@@ -167,8 +217,11 @@ LeftSection:Button({
             }
         }
         
+        -- Save to the Spectral folder so it persists across server changes
+        writefile("Spectral/PendingData.json", HttpService:JSONEncode(pendingData))
+        
         StatusLabel:SetText("Status: Pending [" .. currentRoom .. "] " .. table.concat(pendingData.Numbers, "-"))
-        getgenv().Library:Notification("Numbers & Room saved!", 3, Color3.fromRGB(255, 255, 0))
+        getgenv().Library:Notification("Numbers & Room saved to file!", 3, Color3.fromRGB(255, 255, 0))
     end
 })
 
@@ -176,17 +229,27 @@ LeftSection:Button({
 LeftSection:Button({
     Name = "Assign Pending to Ghost",
     Callback = function()
-        if not pendingData then
-            getgenv().Library:Notification("No pending data to save!", 3, Color3.fromRGB(255, 0, 0))
+        if not isfile("Spectral/PendingData.json") then
+            getgenv().Library:Notification("No pending data found!", 3, Color3.fromRGB(255, 0, 0))
+            return
+        end
+        
+        -- Read the pending data from the file
+        local success, pendingData = pcall(function()
+            return HttpService:JSONDecode(readfile("Spectral/PendingData.json"))
+        end)
+        
+        if not success or not pendingData then
+            getgenv().Library:Notification("Pending file is corrupted!", 3, Color3.fromRGB(255, 0, 0))
             return
         end
         
         local fileData = {}
-        if isfile("GhostData.json") then
-            local success, decoded = pcall(function()
-                return HttpService:JSONDecode(readfile("GhostData.json"))
+        if isfile("Spectral/GhostData.json") then
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(readfile("Spectral/GhostData.json"))
             end)
-            if success and type(decoded) == "table" then
+            if decodeSuccess and type(decoded) == "table" then
                 fileData = decoded
             end
         end
@@ -196,9 +259,11 @@ LeftSection:Button({
         end
         
         table.insert(fileData[selectedGhost], pendingData)
-        writefile("GhostData.json", HttpService:JSONEncode(fileData))
+        writefile("Spectral/GhostData.json", HttpService:JSONEncode(fileData))
         
-        pendingData = nil
+        -- Delete the pending file so it's fresh for the next round
+        delfile("Spectral/PendingData.json")
+        
         StatusLabel:SetText("Status: No pending data")
         getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
     end
