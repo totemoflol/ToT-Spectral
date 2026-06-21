@@ -17,7 +17,6 @@ local demonologyGhosts = {
 -- ==========================================
 -- FUNCTIONS DEFINED AT THE TOP
 -- ==========================================
--- Function to search the workspace for the ghost's room
 local function GetCurrentGhostRoom()
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj:GetAttribute("FavoriteRoom") ~= nil then
@@ -27,7 +26,6 @@ local function GetCurrentGhostRoom()
     return "Unknown"
 end
 
--- Function to read and analyze the file
 local function GetAnalyzedData()
     if not isfile("GhostData.json") then
         return nil, "No data file found."
@@ -48,7 +46,6 @@ local function GetAnalyzedData()
         local ghostPatternsList = {}
         
         for _, pat in ipairs(patterns) do
-            -- Format: "Room: Bedroom | Numbers: 1 | 2 | 3 | 4"
             local roomStr = pat.Room or "Unknown"
             local numStr = table.concat(pat.Numbers, " | ")
             local fullStr = "Room: " .. roomStr .. " | Numbers: " .. numStr
@@ -94,26 +91,8 @@ local GhostDropdown = LeftSection:Dropdown({
     end
 })
 
--- ==========================================
--- FIX: MAKE DROPDOWN SHORTER (Crash-Proofed)
--- ==========================================
-GhostDropdown.MaxSize = 150 
-pcall(function()
-    local optionHolder = GhostDropdown.Items["OptionHolder"].Instance
-    optionHolder.AutomaticSize = Enum.AutomaticSize.None
-    optionHolder.Size = UDim2.new(0, 120, 0, 150)
-    optionHolder.ClipsDescendants = true
-
-    optionHolder.AncestryChanged:Connect(function()
-        if optionHolder.Parent == getgenv().Library.UnusedHolder.Instance then
-            local layout = optionHolder:FindFirstChildWhichIsA("UIListLayout")
-            if layout then
-                layout.Position = UDim2.new(0, 0, 0, 0)
-            end
-        end
-    end)
-end)
--- ==========================================
+-- Set max height so it fits on screen (No custom scroll code needed)
+GhostDropdown.MaxSize = 200
 
 -- 4 Number Textboxes
 for i = 1, 4 do
@@ -132,7 +111,6 @@ end
 LeftSection:Button({
     Name = "Save Pending Numbers",
     Callback = function()
-        -- Grab the room from the game right now
         local currentRoom = GetCurrentGhostRoom()
         
         pendingData = {
@@ -173,11 +151,9 @@ LeftSection:Button({
             fileData[selectedGhost] = {}
         end
         
-        -- Save the data (including the room)
         table.insert(fileData[selectedGhost], pendingData)
         writefile("GhostData.json", HttpService:JSONEncode(fileData))
         
-        -- Clear pending data
         pendingData = nil
         StatusLabel:SetText("Status: No pending data")
         getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
@@ -219,7 +195,7 @@ RightSection:Button({
             return
         end
         
-        local webhookURL = "https://discord.com/api/webhooks/1517845813152186370/1-h_g2Qw5NB2tSnKmgBnK8CVxbRuRALldBXnGw2vc5B2v3sL-pg06EHypyKx4uIxaS0i" 
+        local webhookURL = "YOUR_WEBHOOK_URL_HERE" 
         
         local messageContent = "=== Ghost Data Analysis ===\n"
         for ghostName, patternStr in pairs(results) do
