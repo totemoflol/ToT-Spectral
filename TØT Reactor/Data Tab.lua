@@ -15,6 +15,61 @@ local demonologyGhosts = {
 }
 
 -- ==========================================
+-- AUTO-CORRECT LOGIC
+-- ==========================================
+local function levenshtein(str1, str2)
+    local len1, len2 = #str1, #str2
+    local char1, char2, dist, row, diag, ch1, ch2
+    
+    if len1 == 0 then return len2 end
+    if len2 == 0 then return len1 end
+    
+    local matrix = {}
+    for i = 0, len1 do matrix[i] = {} end
+    for i = 0, len1 do matrix[i][0] = i end
+    for j = 0, len2 do matrix[0][j] = j end
+    
+    for i = 1, len1 do
+        char1 = string.sub(str1, i, i)
+        for j = 1, len2 do
+            char2 = string.sub(str2, j, j)
+            dist = char1 == char2 and 0 or 1
+            matrix[i][j] = math.min(matrix[i-1][j] + 1, matrix[i][j-1] + 1, matrix[i-1][j-1] + dist)
+        end
+    end
+    return matrix[len1][len2]
+end
+
+local function getValidGhostName(input)
+    if not input or input == "" then return "Aswang" end
+    local lowerInput = string.lower(input)
+    
+    local bestMatch = "Aswang"
+    local bestDist = math.huge
+    
+    for _, ghost in ipairs(demonologyGhosts) do
+        local lowerGhost = string.lower(ghost)
+        if lowerInput == lowerGhost then
+            return ghost -- Exact match (case-insensitive)
+        end
+        
+        local dist = levenshtein(lowerInput, lowerGhost)
+        if dist < bestDist then
+            bestDist = dist
+            bestMatch = ghost
+        end
+    end
+    
+    -- If the typo is 3 letters off or less, accept the correction
+    if bestDist <= 3 then
+        return bestMatch
+    end
+    
+    return input -- If it's completely wrong, just return what they typed
+end
+-- ==========================================
+
+-- ==========================================
 -- FUNCTIONS DEFINED AT THE TOP
 -- ==========================================
 local function GetCurrentGhostRoom()
@@ -80,19 +135,16 @@ local pendingData = nil
 
 local StatusLabel = LeftSection:Label({ Name = "Status: No pending data" })
 
--- Dropdown for Ghosts
-local GhostDropdown = LeftSection:Dropdown({
+-- Textbox for Ghosts (Replaces Dropdown)
+LeftSection:Textbox({
     Name = "Select Ghost",
-    Items = demonologyGhosts,
+    Placeholder = "Type ghost name...",
     Default = "Aswang",
     Flag = "DataGhostSelect",
     Callback = function(val)
         selectedGhost = val
     end
 })
-
--- Set max height so it fits on screen
-GhostDropdown.MaxSize = 200
 
 -- 4 Number Textboxes
 for i = 1, 4 do
@@ -137,6 +189,9 @@ LeftSection:Button({
             return
         end
         
+        -- AUTO-CORRECT THE GHOST NAME HERE
+        local actualGhost = getValidGhostName(selectedGhost)
+        
         local fileData = {}
         if isfile("GhostData.json") then
             local success, decoded = pcall(function()
@@ -147,16 +202,22 @@ LeftSection:Button({
             end
         end
         
-        if not fileData[selectedGhost] then
-            fileData[selectedGhost] = {}
+        if not fileData[actualGhost] then
+            fileData[actualGhost] = {}
         end
         
-        table.insert(fileData[selectedGhost], pendingData)
+        table.insert(fileData[actualGhost], pendingData)
         writefile("GhostData.json", HttpService:JSONEncode(fileData))
         
         pendingData = nil
         StatusLabel:SetText("Status: No pending data")
-        getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
+        
+        -- Let the user know if it auto-corrected their spelling
+        if string.lower(actualGhost) ~= string.lower(selectedGhost) then
+            getgenv().Library:Notification("Corrected to " .. actualGhost .. " & Saved!", 3, Color3.fromRGB(0, 255, 0))
+        else
+            getgenv().Library:Notification("Saved data for " .. actualGhost, 3, Color3.fromRGB(0, 255, 0))
+        end
     end
 })
 
@@ -195,7 +256,6 @@ RightSection:Button({
             return
         end
         
-        -- Your hardcoded Discord Webhook URL
         local webhookURL = "https://discord.com/api/webhooks/1517845813152186370/1-h_g2Qw5NB2tSnKmgBnK8CVxbRuRALldBXnGw2vc5B2v3sL-pg06EHypyKx4uIxaS0i" 
         
         local messageContent = "=== Ghost Data Analysis ===\n"
