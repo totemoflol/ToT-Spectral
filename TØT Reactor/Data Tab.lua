@@ -1,8 +1,6 @@
 local Window = getgenv().Window
 local HttpService = game:GetService("HttpService")
-local UserInputService = game:GetService("UserInputService")
 
--- Define the ghost list again for this file
 local demonologyGhosts = {
     "Aswang", "Banshee", "Demon", "Dullahan", "Dybbuk", "Entity", "Ghoul", 
     "Keres", "Leviathan", "Nightmare", "Oni", "Phantom", "Revenant", 
@@ -10,12 +8,113 @@ local demonologyGhosts = {
     "Umbra", "Vex", "Wendigo", "Wraith", "Ravager", "Vesper"
 }
 
--- Create the Data Logger Page
 local DataTab = Window:Page({ Icon = "rbxassetid://129245697782918" })
+local LeftSection = DataTab:Section({ Name = "Log Data", Side = 1 })
+
+local selectedGhost = "Aswang"
+local numInputs = {"", "", "", ""}
+local pendingData = nil -- Holds the numbers between rounds
+
+-- Label to show if data is pending
+local StatusLabel = LeftSection:Label({ Name = "Status: No pending data" })
+
+-- Dropdown for Ghosts
+local GhostDropdown = LeftSection:Dropdown({
+    Name = "Select Ghost",
+    Items = demonologyGhosts,
+    Default = "Aswang",
+    Flag = "DataGhostSelect",
+    Callback = function(val)
+        selectedGhost = val
+    end
+})
 
 -- ==========================================
--- MOVED UP: Function to analyze the file
+-- FIX: MAKE DROPDOWN SHORTER FOR PC & MOBILE
 -- ==========================================
+GhostDropdown.MaxSize = 150 
+local optionHolder = GhostDropdown.Items["OptionHolder"].Instance
+optionHolder.AutomaticSize = Enum.AutomaticSize.None
+optionHolder.Size = UDim2.new(0, 120, 0, 150)
+optionHolder.ClipsDescendants = true
+
+optionHolder.AncestryChanged:Connect(function()
+    if optionHolder.Parent == getgenv().Library.UnusedHolder.Instance then
+        local layout = optionHolder:FindFirstChildWhichIsA("UIListLayout")
+        if layout then
+            layout.Position = UDim2.new(0, 0, 0, 0)
+        end
+    end
+end)
+-- ==========================================
+
+-- 4 Number Textboxes
+for i = 1, 4 do
+    LeftSection:Textbox({
+        Name = "Number " .. i,
+        Placeholder = "Enter number...",
+        Numeric = true,
+        Flag = "DataNum" .. i,
+        Callback = function(val)
+            numInputs[i] = val
+        end
+    })
+end
+
+-- Button 1: Save numbers to memory during the round
+LeftSection:Button({
+    Name = "Save Pending Numbers",
+    Callback = function()
+        pendingData = {
+            numInputs[1] ~= "" and numInputs[1] or "0",
+            numInputs[2] ~= "" and numInputs[2] or "0",
+            numInputs[3] ~= "" and numInputs[3] or "0",
+            numInputs[4] ~= "" and numInputs[4] or "0"
+        }
+        
+        StatusLabel:SetText("Status: Pending " .. table.concat(pendingData, "-"))
+        getgenv().Library:Notification("Numbers saved temporarily!", 3, Color3.fromRGB(255, 255, 0))
+    end
+})
+
+-- Button 2: Assign the pending numbers to the ghost at the end of the round
+LeftSection:Button({
+    Name = "Assign Pending to Ghost",
+    Callback = function()
+        if not pendingData then
+            getgenv().Library:Notification("No pending numbers to save!", 3, Color3.fromRGB(255, 0, 0))
+            return
+        end
+        
+        local fileData = {}
+        if isfile("GhostData.json") then
+            local success, decoded = pcall(function()
+                return HttpService:JSONDecode(readfile("GhostData.json"))
+            end)
+            if success and type(decoded) == "table" then
+                fileData = decoded
+            end
+        end
+        
+        if not fileData[selectedGhost] then
+            fileData[selectedGhost] = {}
+        end
+        
+        table.insert(fileData[selectedGhost], pendingData)
+        writefile("GhostData.json", HttpService:JSONEncode(fileData))
+        
+        -- Clear pending data
+        pendingData = nil
+        StatusLabel:SetText("Status: No pending data")
+        getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
+    end
+})
+
+-- ==========================================
+-- Right Side: Analyzing & Webhook (Unchanged)
+-- ==========================================
+local RightSection = DataTab:Section({ Name = "Analyze Data", Side = 2 })
+
 local function GetAnalyzedData()
     if not isfile("GhostData.json") then
         return nil, "No data file found."
@@ -54,113 +153,8 @@ local function GetAnalyzedData()
     return results
 end
 
--- Left Side: Logging
-local LeftSection = DataTab:Section({ Name = "Log Data", Side = 1 })
-
-local selectedGhost = "Aswang"
-local numInputs = {"", "", "", ""}
-
--- Dropdown for Ghosts
-local GhostDropdown = LeftSection:Dropdown({
-    Name = "Select Ghost",
-    Items = demonologyGhosts,
-    Default = "Aswang",
-    Flag = "DataGhostSelect",
-    Callback = function(val)
-        selectedGhost = val
-    end
-})
-
--- ==========================================
--- FIX: MAKE DROPDOWN SHORTER (150px) AND SCROLLABLE
--- ==========================================
-GhostDropdown.MaxSize = 150 -- Prevents the UI library from erroring on nil size
-local optionHolder = GhostDropdown.Items["OptionHolder"].Instance
-
--- Disable AutomaticSize so our fixed height applies
-optionHolder.AutomaticSize = Enum.AutomaticSize.None
-optionHolder.Size = UDim2.new(0, 120, 0, 150)
-optionHolder.ClipsDescendants = true
-
--- Add custom scrolling logic for the UIListLayout
-local layout = optionHolder:FindFirstChildWhichIsA("UIListLayout")
-if layout then
-    local isHovering = false
-    optionHolder.MouseEnter:Connect(function() isHovering = true end)
-    optionHolder.MouseLeave:Connect(function() isHovering = false end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if isHovering and input.UserInputType == Enum.UserInputType.MouseWheel then
-            -- Calculate how far down we can scroll
-            local maxY = (#demonologyGhosts * 28) - 150
-            if maxY < 0 then maxY = 0 end
-            
-            local currentY = layout.Position.Y.Offset
-            local newY = math.clamp(currentY + (input.Position.Z * 30), -maxY, 0)
-            layout.Position = UDim2.new(0, 0, 0, newY)
-        end
-    end)
-    
-    -- Reset scroll position when dropdown closes
-    optionHolder.AncestryChanged:Connect(function()
-        if optionHolder.Parent == getgenv().Library.UnusedHolder.Instance then
-            layout.Position = UDim2.new(0, 0, 0, 0)
-        end
-    end)
-end
--- ==========================================
-
--- 4 Number Textboxes
-for i = 1, 4 do
-    LeftSection:Textbox({
-        Name = "Number " .. i,
-        Placeholder = "Enter number...",
-        Numeric = true,
-        Flag = "DataNum" .. i,
-        Callback = function(val)
-            numInputs[i] = val
-        end
-    })
-end
-
--- Save to Device Button
-LeftSection:Button({
-    Name = "Save to Device",
-    Callback = function()
-        local fileData = {}
-        if isfile("GhostData.json") then
-            local success, decoded = pcall(function()
-                return HttpService:JSONDecode(readfile("GhostData.json"))
-            end)
-            if success and type(decoded) == "table" then
-                fileData = decoded
-            end
-        end
-        
-        if not fileData[selectedGhost] then
-            fileData[selectedGhost] = {}
-        end
-        
-        table.insert(fileData[selectedGhost], {
-            numInputs[1] ~= "" and numInputs[1] or "0",
-            numInputs[2] ~= "" and numInputs[2] or "0",
-            numInputs[3] ~= "" and numInputs[3] or "0",
-            numInputs[4] ~= "" and numInputs[4] or "0"
-        })
-        
-        writefile("GhostData.json", HttpService:JSONEncode(fileData))
-        getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
-    end
-})
-
-
--- Right Side: Analyzing & Webhook
-local RightSection = DataTab:Section({ Name = "Analyze Data", Side = 2 })
-
--- Forward declare the label so the buttons can edit it, even though it's created at the bottom
 local ResultsLabel
 
--- Analyze Button
 RightSection:Button({
     Name = "Analyze & Display Data",
     Callback = function()
@@ -180,7 +174,6 @@ RightSection:Button({
     end
 })
 
--- Send to Webhook Button
 RightSection:Button({
     Name = "Send to Discord Webhook",
     Callback = function()
@@ -190,7 +183,7 @@ RightSection:Button({
             return
         end
         
-        local webhookURL = "YOUR_WEBHOOK_URL_HERE" -- <--- PASTE YOUR WEBHOOK HERE
+        local webhookURL = "YOUR_WEBHOOK_URL_HERE" 
         
         local messageContent = "=== Ghost Data Analysis ===\n"
         for ghostName, patternStr in pairs(results) do
@@ -214,5 +207,4 @@ RightSection:Button({
     end
 })
 
--- Create the Results Label LAST so it visually appears below the buttons
 ResultsLabel = RightSection:Label({ Name = "No data analyzed yet." })
