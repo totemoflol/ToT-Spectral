@@ -15,61 +15,6 @@ local demonologyGhosts = {
 }
 
 -- ==========================================
--- AUTO-CORRECT LOGIC
--- ==========================================
-local function levenshtein(str1, str2)
-    local len1, len2 = #str1, #str2
-    local char1, char2, dist, row, diag, ch1, ch2
-    
-    if len1 == 0 then return len2 end
-    if len2 == 0 then return len1 end
-    
-    local matrix = {}
-    for i = 0, len1 do matrix[i] = {} end
-    for i = 0, len1 do matrix[i][0] = i end
-    for j = 0, len2 do matrix[0][j] = j end
-    
-    for i = 1, len1 do
-        char1 = string.sub(str1, i, i)
-        for j = 1, len2 do
-            char2 = string.sub(str2, j, j)
-            dist = char1 == char2 and 0 or 1
-            matrix[i][j] = math.min(matrix[i-1][j] + 1, matrix[i][j-1] + 1, matrix[i-1][j-1] + dist)
-        end
-    end
-    return matrix[len1][len2]
-end
-
-local function getValidGhostName(input)
-    if not input or input == "" then return "Aswang" end
-    local lowerInput = string.lower(input)
-    
-    local bestMatch = "Aswang"
-    local bestDist = math.huge
-    
-    for _, ghost in ipairs(demonologyGhosts) do
-        local lowerGhost = string.lower(ghost)
-        if lowerInput == lowerGhost then
-            return ghost -- Exact match (case-insensitive)
-        end
-        
-        local dist = levenshtein(lowerInput, lowerGhost)
-        if dist < bestDist then
-            bestDist = dist
-            bestMatch = ghost
-        end
-    end
-    
-    -- If the typo is 3 letters off or less, accept the correction
-    if bestDist <= 3 then
-        return bestMatch
-    end
-    
-    return input -- If it's completely wrong, just return what they typed
-end
--- ==========================================
-
--- ==========================================
 -- FUNCTIONS DEFINED AT THE TOP
 -- ==========================================
 local function GetCurrentGhostRoom()
@@ -135,8 +80,10 @@ local pendingData = nil
 
 local StatusLabel = LeftSection:Label({ Name = "Status: No pending data" })
 
--- Textbox for Ghosts (Replaces Dropdown)
-LeftSection:Textbox({
+-- ==========================================
+-- TEXTBOX WITH REAL-TIME AUTO-COMPLETE
+-- ==========================================
+local GhostTextbox = LeftSection:Textbox({
     Name = "Select Ghost",
     Placeholder = "Type ghost name...",
     Default = "Aswang",
@@ -145,6 +92,51 @@ LeftSection:Textbox({
         selectedGhost = val
     end
 })
+
+-- Access the internal TextBox to hook typing events
+local inputInstance = GhostTextbox.Items["Input"].Instance
+local isUpdating = false
+local oldLen = 0
+
+inputInstance:GetPropertyChangedSignal("Text"):Connect(function()
+    if isUpdating then return end
+    
+    local text = inputInstance.Text
+    local newLen = #text
+    
+    -- Only auto-complete if the user is typing forward
+    if newLen > oldLen and newLen > 0 then
+        local lowerText = string.lower(text)
+        local match = nil
+        local matchCount = 0
+        
+        -- Find ghosts that start with what they typed
+        for _, ghost in ipairs(demonologyGhosts) do
+            if string.sub(string.lower(ghost), 1, #lowerText) == lowerText then
+                match = ghost
+                matchCount = matchCount + 1
+            end
+        end
+        
+        -- If exactly one ghost matches, auto-complete it
+        if matchCount == 1 and lowerText ~= string.lower(match) then
+            isUpdating = true
+            
+            inputInstance.Text = match
+            
+            -- Highlight the auto-completed part so they can type over it if it's wrong
+            inputInstance.CursorPosition = newLen + 1
+            inputInstance.SelectionStart = #match + 1
+            
+            isUpdating = false
+            oldLen = #match
+            return
+        end
+    end
+    
+    oldLen = newLen
+end)
+-- ==========================================
 
 -- 4 Number Textboxes
 for i = 1, 4 do
@@ -189,9 +181,6 @@ LeftSection:Button({
             return
         end
         
-        -- AUTO-CORRECT THE GHOST NAME HERE
-        local actualGhost = getValidGhostName(selectedGhost)
-        
         local fileData = {}
         if isfile("GhostData.json") then
             local success, decoded = pcall(function()
@@ -202,22 +191,16 @@ LeftSection:Button({
             end
         end
         
-        if not fileData[actualGhost] then
-            fileData[actualGhost] = {}
+        if not fileData[selectedGhost] then
+            fileData[selectedGhost] = {}
         end
         
-        table.insert(fileData[actualGhost], pendingData)
+        table.insert(fileData[selectedGhost], pendingData)
         writefile("GhostData.json", HttpService:JSONEncode(fileData))
         
         pendingData = nil
         StatusLabel:SetText("Status: No pending data")
-        
-        -- Let the user know if it auto-corrected their spelling
-        if string.lower(actualGhost) ~= string.lower(selectedGhost) then
-            getgenv().Library:Notification("Corrected to " .. actualGhost .. " & Saved!", 3, Color3.fromRGB(0, 255, 0))
-        else
-            getgenv().Library:Notification("Saved data for " .. actualGhost, 3, Color3.fromRGB(0, 255, 0))
-        end
+        getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
     end
 })
 
