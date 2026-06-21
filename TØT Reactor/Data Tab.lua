@@ -91,7 +91,7 @@ local GhostDropdown = LeftSection:Dropdown({
     end
 })
 
--- Set max height so it fits on screen (No custom scroll code needed)
+-- Set max height so it fits on screen
 GhostDropdown.MaxSize = 200
 
 -- 4 Number Textboxes
@@ -195,7 +195,8 @@ RightSection:Button({
             return
         end
         
-        local webhookURL = "YOUR_WEBHOOK_URL_HERE" 
+        -- Your hardcoded Discord Webhook URL
+        local webhookURL = "https://discord.com/api/webhooks/1517845813152186370/1-h_g2Qw5NB2tSnKmgBnK8CVxbRuRALldBXnGw2vc5B2v3sL-pg06EHypyKx4uIxaS0i" 
         
         local messageContent = "=== Ghost Data Analysis ===\n"
         for ghostName, patternStr in pairs(results) do
