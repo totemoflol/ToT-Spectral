@@ -7,10 +7,13 @@ if not Window then
     return
 end
 
--- Create the Spectral folder in the executor workspace
-if not isfolder("Spectral") then
-    makefolder("Spectral")
-end
+-- ==========================================
+-- CLOUD DATABASE SETTINGS (JSONBIN.IO)
+-- ==========================================
+local BIN_ID = "6a38b40cf5f4af5e291add27" -- Replace with your Bin ID
+local API_KEY = "$2a$10$MlmhtsMpxqWbB40zPLSaV.AiRlLsSzyugdFeIrQRWzIJbDHhGhHsW" -- Replace with your JSONBin API Key
+local CLOUD_URL = "https://api.jsonbin.io/v3/b/" .. BIN_ID
+-- ==========================================
 
 local demonologyGhosts = {
     "Aswang", "Banshee", "Demon", "Dullahan", "Dybbuk", "Entity", "Ghoul", 
@@ -20,12 +23,10 @@ local demonologyGhosts = {
 }
 
 -- ==========================================
--- AUTO-CORRECT LOGIC (Triggers on Enter/FocusLost)
+-- AUTO-CORRECT LOGIC
 -- ==========================================
 local function levenshtein(str1, str2)
     local len1, len2 = #str1, #str2
-    local char1, char2, dist, row, diag, ch1, ch2
-    
     if len1 == 0 then return len2 end
     if len2 == 0 then return len1 end
     
@@ -35,10 +36,10 @@ local function levenshtein(str1, str2)
     for j = 0, len2 do matrix[0][j] = j end
     
     for i = 1, len1 do
-        char1 = string.sub(str1, i, i)
+        local char1 = string.sub(str1, i, i)
         for j = 1, len2 do
-            char2 = string.sub(str2, j, j)
-            dist = char1 == char2 and 0 or 1
+            local char2 = string.sub(str2, j, j)
+            local dist = char1 == char2 and 0 or 1
             matrix[i][j] = math.min(matrix[i-1][j] + 1, matrix[i][j-1] + 1, matrix[i-1][j-1] + dist)
         end
     end
@@ -49,14 +50,10 @@ local function getValidGhostName(input)
     if not input or input == "" then return nil end
     local lowerInput = string.lower(input)
     
-    -- 1. Check for exact match
     for _, ghost in ipairs(demonologyGhosts) do
-        if lowerInput == string.lower(ghost) then
-            return ghost
-        end
+        if lowerInput == string.lower(ghost) then return ghost end
     end
     
-    -- 2. Check for prefix match (e.g., "Asw" -> "Aswang")
     if #lowerInput >= 3 then
         local matchCount = 0
         local bestMatch = nil
@@ -66,12 +63,9 @@ local function getValidGhostName(input)
                 bestMatch = ghost
             end
         end
-        if matchCount == 1 then
-            return bestMatch
-        end
+        if matchCount == 1 then return bestMatch end
     end
     
-    -- 3. Fallback to Levenshtein for typos (e.g., "Banshe" -> "Banshee")
     local bestMatch = nil
     local bestDist = math.huge
     for _, ghost in ipairs(demonologyGhosts) do
@@ -82,17 +76,48 @@ local function getValidGhostName(input)
         end
     end
     
-    if bestDist <= 2 then -- Allow up to 2 typos
-        return bestMatch
-    end
-    
+    if bestDist <= 2 then return bestMatch end
     return nil
 end
 -- ==========================================
 
 -- ==========================================
--- FILE AND DATA FUNCTIONS
+-- CLOUD NETWORK FUNCTIONS
 -- ==========================================
+local requestFunc = (syn and syn.request) or http_request or http.request or fluxus.request
+
+local function FetchCloudData()
+    local success, response = pcall(function()
+        return requestFunc({
+            Url = CLOUD_URL .. "/latest",
+            Method = "GET",
+            Headers = { ["X-Master-Key"] = API_KEY }
+        })
+    end)
+    
+    if success and response and response.Body then
+        local decoded = HttpService:JSONDecode(response.Body)
+        if decoded and decoded.record and type(decoded.record) == "table" then
+            return decoded.record
+        end
+    end
+    return {}
+end
+
+local function SaveCloudData(dataTable)
+    pcall(function()
+        requestFunc({
+            Url = CLOUD_URL,
+            Method = "PUT",
+            Headers = { 
+                ["Content-Type"] = "application/json",
+                ["X-Master-Key"] = API_KEY 
+            },
+            Body = HttpService:JSONEncode(dataTable)
+        })
+    end)
+end
+
 local function GetCurrentGhostRoom()
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj:GetAttribute("FavoriteRoom") ~= nil then
@@ -103,40 +128,31 @@ local function GetCurrentGhostRoom()
 end
 
 local function GetAnalyzedData()
-    if not isfile("Spectral/GhostData.json") then
-        return nil, "No data file found."
-    end
-    
-    local success, fileData = pcall(function()
-        return HttpService:JSONDecode(readfile("Spectral/GhostData.json"))
-    end)
-    
-    if not success or type(fileData) ~= "table" then
-        return nil, "Failed to read data file."
-    end
-
+    local fileData = FetchCloudData()
     local results = {}
     
     for ghostName, patterns in pairs(fileData) do
-        local counts = {}
-        local ghostPatternsList = {}
-        
-        for _, pat in ipairs(patterns) do
-            local roomStr = pat.Room or "Unknown"
-            local numStr = table.concat(pat.Numbers, " | ")
-            local fullStr = "Room: " .. roomStr .. " | Numbers: " .. numStr
+        if type(patterns) == "table" then
+            local counts = {}
+            local ghostPatternsList = {}
             
-            counts[fullStr] = (counts[fullStr] or 0) + 1
-        end
-        
-        for patternStr, count in pairs(counts) do
-            table.insert(ghostPatternsList, patternStr .. " (Found " .. count .. " times)")
-        end
-        
-        if #ghostPatternsList > 0 then
-            results[ghostName] = table.concat(ghostPatternsList, "\n")
-        else
-            results[ghostName] = "No valid patterns"
+            for _, pat in ipairs(patterns) do
+                local roomStr = pat.Room or "Unknown"
+                local numStr = table.concat(pat.Numbers, " | ")
+                local fullStr = "Room: " .. roomStr .. " | Numbers: " .. numStr
+                
+                counts[fullStr] = (counts[fullStr] or 0) + 1
+            end
+            
+            for patternStr, count in pairs(counts) do
+                table.insert(ghostPatternsList, patternStr .. " (Found " .. count .. " times)")
+            end
+            
+            if #ghostPatternsList > 0 then
+                results[ghostName] = table.concat(ghostPatternsList, "\n")
+            else
+                results[ghostName] = "No valid patterns"
+            end
         end
     end
     
@@ -152,30 +168,27 @@ local LeftSection = DataTab:Section({ Name = "Log Data", Side = 1 })
 
 local selectedGhost = "Aswang"
 local numInputs = {"", "", "", ""}
+local pendingData = nil 
 
--- Check if pending data exists from a previous server
-local function CheckPendingStatus()
-    if isfile("Spectral/PendingData.json") then
-        local success, data = pcall(function()
-            return HttpService:JSONDecode(readfile("Spectral/PendingData.json"))
-        end)
-        if success and data then
-            local numStr = table.concat(data.Numbers, "-")
-            return "Status: Pending [" .. (data.Room or "Unknown") .. "] " .. numStr
-        end
+local StatusLabel = LeftSection:Label({ Name = "Status: No pending data" })
+
+-- Check cloud for pending data on load
+task.spawn(function()
+    local cloudData = FetchCloudData()
+    if cloudData and cloudData._PendingData then
+        pendingData = cloudData._PendingData
+        local numStr = table.concat(pendingData.Numbers, "-")
+        StatusLabel:SetText("Status: Pending [" .. (pendingData.Room or "Unknown") .. "] " .. numStr)
     end
-    return "Status: No pending data"
-end
+end)
 
-local StatusLabel = LeftSection:Label({ Name = CheckPendingStatus() })
-
--- Textbox for Ghosts (Corrects on Enter / FocusLost)
+-- Textbox for Ghosts
 local GhostTextbox = LeftSection:Textbox({
     Name = "Select Ghost",
     Placeholder = "Type name & press Enter",
     Default = "Aswang",
     Flag = "DataGhostSelect",
-    Finished = true, -- Fires when you press Enter or click away
+    Finished = true,
     Callback = function(val)
         local corrected = getValidGhostName(val)
         if corrected then
@@ -201,13 +214,13 @@ for i = 1, 4 do
     })
 end
 
--- Button 1: Save numbers AND room to FILE (Survives server changes)
+-- Button 1: Save pending to Cloud
 LeftSection:Button({
     Name = "Save Pending Numbers",
     Callback = function()
         local currentRoom = GetCurrentGhostRoom()
         
-        local pendingData = {
+        pendingData = {
             Room = currentRoom,
             Numbers = {
                 numInputs[1] ~= "" and numInputs[1] or "0",
@@ -217,55 +230,38 @@ LeftSection:Button({
             }
         }
         
-        -- Save to the Spectral folder so it persists across server changes
-        writefile("Spectral/PendingData.json", HttpService:JSONEncode(pendingData))
+        local cloudData = FetchCloudData()
+        cloudData._PendingData = pendingData
+        SaveCloudData(cloudData)
         
         StatusLabel:SetText("Status: Pending [" .. currentRoom .. "] " .. table.concat(pendingData.Numbers, "-"))
-        getgenv().Library:Notification("Numbers & Room saved to file!", 3, Color3.fromRGB(255, 255, 0))
+        getgenv().Library:Notification("Numbers saved to Cloud!", 3, Color3.fromRGB(255, 255, 0))
     end
 })
 
--- Button 2: Assign the pending data to the ghost at the end of the round
+-- Button 2: Assign pending to ghost in Cloud
 LeftSection:Button({
     Name = "Assign Pending to Ghost",
     Callback = function()
-        if not isfile("Spectral/PendingData.json") then
+        if not pendingData then
             getgenv().Library:Notification("No pending data found!", 3, Color3.fromRGB(255, 0, 0))
             return
         end
         
-        -- Read the pending data from the file
-        local success, pendingData = pcall(function()
-            return HttpService:JSONDecode(readfile("Spectral/PendingData.json"))
-        end)
+        local cloudData = FetchCloudData()
         
-        if not success or not pendingData then
-            getgenv().Library:Notification("Pending file is corrupted!", 3, Color3.fromRGB(255, 0, 0))
-            return
+        if not cloudData[selectedGhost] then
+            cloudData[selectedGhost] = {}
         end
         
-        local fileData = {}
-        if isfile("Spectral/GhostData.json") then
-            local decodeSuccess, decoded = pcall(function()
-                return HttpService:JSONDecode(readfile("Spectral/GhostData.json"))
-            end)
-            if decodeSuccess and type(decoded) == "table" then
-                fileData = decoded
-            end
-        end
+        table.insert(cloudData[selectedGhost], pendingData)
+        cloudData._PendingData = nil
         
-        if not fileData[selectedGhost] then
-            fileData[selectedGhost] = {}
-        end
+        SaveCloudData(cloudData)
         
-        table.insert(fileData[selectedGhost], pendingData)
-        writefile("Spectral/GhostData.json", HttpService:JSONEncode(fileData))
-        
-        -- Delete the pending file so it's fresh for the next round
-        delfile("Spectral/PendingData.json")
-        
+        pendingData = nil
         StatusLabel:SetText("Status: No pending data")
-        getgenv().Library:Notification("Saved data for " .. selectedGhost, 3, Color3.fromRGB(0, 255, 0))
+        getgenv().Library:Notification("Saved data for " .. selectedGhost .. " to Cloud!", 3, Color3.fromRGB(0, 255, 0))
     end
 })
 
@@ -279,11 +275,7 @@ local ResultsLabel
 RightSection:Button({
     Name = "Analyze & Display Data",
     Callback = function()
-        local results, err = GetAnalyzedData()
-        if err then
-            ResultsLabel:SetText(err)
-            return
-        end
+        local results = GetAnalyzedData()
         
         local displayText = "=== Logged Patterns ==="
         for ghostName, patternStr in pairs(results) do
@@ -298,11 +290,7 @@ RightSection:Button({
 RightSection:Button({
     Name = "Send to Discord Webhook",
     Callback = function()
-        local results, err = GetAnalyzedData()
-        if err then
-            getgenv().Library:Notification(err, 3, Color3.fromRGB(255, 0, 0))
-            return
-        end
+        local results = GetAnalyzedData()
         
         local webhookURL = "https://discord.com/api/webhooks/1517845813152186370/1-h_g2Qw5NB2tSnKmgBnK8CVxbRuRALldBXnGw2vc5B2v3sL-pg06EHypyKx4uIxaS0i" 
         
@@ -316,7 +304,7 @@ RightSection:Button({
         })
         
         pcall(function()
-            (syn and syn.request or http_request or http.request or fluxus.request)({
+            requestFunc({
                 Url = webhookURL,
                 Method = "POST",
                 Headers = { ["Content-Type"] = "application/json" },
