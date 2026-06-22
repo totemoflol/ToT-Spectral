@@ -12,7 +12,7 @@ end
 -- ==========================================
 local BIN_ID = "6a38b40cf5f4af5e291add27" -- Replace with your Bin ID
 local API_KEY = "$2a$10$MlmhtsMpxqWbB40zPLSaV.AiRlLsSzyugdFeIrQRWzIJbDHhGhHsW" -- Replace with your JSONBin API Key
-local CLOUD_URL = "https://api.jsonbin.io/v3/b/6a38b40cf5f4af5e291add27" .. BIN_ID
+local CLOUD_URL = "https://api.jsonbin.io/v3/b/" .. BIN_ID
 -- ==========================================
 
 local demonologyGhosts = {
